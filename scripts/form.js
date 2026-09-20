@@ -1,5 +1,32 @@
 // Contact Form functionality with validation and submission
 
+/**
+ * Client-Side Input Sanitizer & XSS Prevention Layer
+ * Neutralizes <script>, <iframe>, javascript:, and HTML entities
+ */
+function escapeHTML(str) {
+    if (typeof str !== 'string') return '';
+    return str
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+        .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+        .replace(/javascript:/gi, '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;')
+        .replace(/\//g, '&#x2F;');
+}
+
+const securityTestVectors = [
+    { payload: '<script>alert("xss")</script>', expectedSafe: true },
+    { payload: '<iframe src="javascript:alert(1)"></iframe>', expectedSafe: true },
+    { payload: '<img src=x onerror=alert(1)>', expectedSafe: true },
+    { payload: 'javascript:alert(document.cookie)', expectedSafe: true },
+    { payload: '"><script>alert(1)</script>', expectedSafe: true },
+    { payload: '<svg/onload=alert(1)>', expectedSafe: true }
+];
+
 class ContactForm {
     constructor(formId) {
         this.form = document.getElementById(formId);
@@ -55,7 +82,8 @@ class ContactForm {
         const field = this.fields[fieldName];
         if (!field) return false;
         
-        const value = field.element.value.trim();
+        const rawValue = field.element.value.trim();
+        const value = escapeHTML(rawValue);
         field.value = value;
         
         let isValid = false;
@@ -101,9 +129,9 @@ class ContactForm {
             // Add appropriate class
             formGroup.classList.add(isValid ? 'success' : 'error');
             
-            // Show/hide error message
+            // Show/hide error message via strict document.createTextNode
             if (field.errorElement) {
-                field.errorElement.textContent = errorMessage;
+                field.errorElement.replaceChildren(document.createTextNode(errorMessage));
             }
         }
     }
@@ -115,7 +143,7 @@ class ContactForm {
         if (formGroup.classList.contains('error')) {
             formGroup.classList.remove('error');
             if (field.errorElement) {
-                field.errorElement.textContent = '';
+                field.errorElement.replaceChildren();
             }
         }
     }
@@ -270,7 +298,7 @@ async handleSubmit(e) {
         // Create toast element
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
-        toast.textContent = message;
+        toast.appendChild(document.createTextNode(message));
         
         // Style the toast
         Object.assign(toast.style, {
@@ -323,16 +351,27 @@ const ValidationHelpers = {
     },
     
     sanitizeInput: (input) => {
-        return input.trim().replace(/[<>]/g, '');
-    }
+        return escapeHTML(input.trim());
+    },
+
+    escapeHTML: escapeHTML,
+    securityTestVectors: securityTestVectors
 };
 
 // Initialize form when DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
-    new ContactForm('contactForm');
-});
+if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', function() {
+        new ContactForm('contactForm');
+    });
+}
 
 // Export for modular usage
+if (typeof globalThis !== 'undefined') {
+    globalThis.ContactForm = ContactForm;
+    globalThis.ValidationHelpers = ValidationHelpers;
+    globalThis.escapeHTML = escapeHTML;
+    globalThis.securityTestVectors = securityTestVectors;
+}
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ContactForm, ValidationHelpers };
+    module.exports = { ContactForm, ValidationHelpers, escapeHTML, securityTestVectors };
 }

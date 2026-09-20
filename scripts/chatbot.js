@@ -1,5 +1,32 @@
 // Interactive Chatbot Demo functionality
 
+/**
+ * Client-Side Input Sanitizer & XSS Prevention Layer
+ * Neutralizes <script>, <iframe>, javascript:, and HTML entities
+ */
+function escapeHTML(str) {
+    if (typeof str !== 'string') return '';
+    return str
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+        .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+        .replace(/javascript:/gi, '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;')
+        .replace(/\//g, '&#x2F;');
+}
+
+const securityTestVectors = [
+    { payload: '<script>alert("xss")</script>', expectedSafe: true },
+    { payload: '<iframe src="javascript:alert(1)"></iframe>', expectedSafe: true },
+    { payload: '<img src=x onerror=alert(1)>', expectedSafe: true },
+    { payload: 'javascript:alert(document.cookie)', expectedSafe: true },
+    { payload: '"><script>alert(1)</script>', expectedSafe: true },
+    { payload: '<svg/onload=alert(1)>', expectedSafe: true }
+];
+
 class ChatbotDemo {
     constructor(containerId) {
         this.container = document.getElementById(containerId);
@@ -95,7 +122,8 @@ class ChatbotDemo {
     handleSendMessage() {
         const message = this.input.value.trim();
         if (message) {
-            this.sendMessage(message);
+            const sanitized = escapeHTML(message);
+            this.sendMessage(sanitized);
             this.input.value = '';
             this.input.style.height = 'auto';
         }
@@ -191,14 +219,14 @@ class ChatbotDemo {
     
     renderQuickReplies(chips) {
         if (!this.quickReplies) return;
-        this.quickReplies.innerHTML = '';
+        this.quickReplies.replaceChildren();
         this.quickReplies.style.display = 'flex';
         
         chips.forEach(chipText => {
             const button = document.createElement('button');
             button.className = 'quick-reply';
             button.setAttribute('data-message', chipText);
-            button.textContent = chipText;
+            button.appendChild(document.createTextNode(chipText));
             this.quickReplies.appendChild(button);
         });
     }
@@ -217,20 +245,24 @@ class ChatbotDemo {
         
         const avatar = document.createElement('div');
         avatar.className = 'message-avatar';
-        avatar.innerHTML = sender === 'bot' ? '<i data-lucide="bot"></i>' : '<i data-lucide="user"></i>';
+        const avatarIcon = document.createElement('i');
+        avatarIcon.setAttribute('data-lucide', sender === 'bot' ? 'bot' : 'user');
+        avatar.appendChild(avatarIcon);
         
         const content = document.createElement('div');
         content.className = 'message-content';
         
         const messageParagraph = document.createElement('p');
-        messageParagraph.textContent = text;
+        // Enforce strict DOM node creation via document.createTextNode() instead of raw innerHTML
+        const safeText = escapeHTML(text);
+        messageParagraph.appendChild(document.createTextNode(safeText));
         
         const timestamp = document.createElement('span');
         timestamp.className = 'message-time';
-        timestamp.textContent = new Date().toLocaleTimeString([], {
+        timestamp.appendChild(document.createTextNode(new Date().toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit'
-        });
+        })));
         
         content.appendChild(messageParagraph);
         content.appendChild(timestamp);
@@ -270,14 +302,18 @@ class ChatbotDemo {
         
         const avatar = document.createElement('div');
         avatar.className = 'message-avatar';
-        avatar.innerHTML = '<i data-lucide="bot"></i>';
+        const avatarIcon = document.createElement('i');
+        avatarIcon.setAttribute('data-lucide', 'bot');
+        avatar.appendChild(avatarIcon);
         
         const content = document.createElement('div');
         content.className = 'message-content';
         
         const typingIndicator = document.createElement('div');
         typingIndicator.className = 'typing-indicator';
-        typingIndicator.innerHTML = '<span></span><span></span><span></span>';
+        for (let i = 0; i < 3; i++) {
+            typingIndicator.appendChild(document.createElement('span'));
+        }
         
         content.appendChild(typingIndicator);
         typingDiv.appendChild(avatar);
@@ -303,13 +339,14 @@ class ChatbotDemo {
 }
 
 // Initialize chatbot when DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
-    new ChatbotDemo('chatbotWindow');
-});
+if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', function() {
+        new ChatbotDemo('chatbotWindow');
+    });
 
-// Add CSS for message animations and disabled quick reply states
-const style = document.createElement('style');
-style.textContent = `
+    // Add CSS for message animations and disabled quick reply states
+    const style = document.createElement('style');
+    style.textContent = `
 .message-enter {
     opacity: 0;
     transform: translateY(20px);
@@ -366,4 +403,17 @@ style.textContent = `
     }
 }
 `;
-document.head.appendChild(style);
+    if (document.head) {
+        document.head.appendChild(style);
+    }
+}
+
+// Export for modular usage and test verification
+if (typeof globalThis !== 'undefined') {
+    globalThis.ChatbotDemo = ChatbotDemo;
+    globalThis.escapeHTML = escapeHTML;
+    globalThis.securityTestVectors = securityTestVectors;
+}
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { ChatbotDemo, escapeHTML, securityTestVectors };
+}
